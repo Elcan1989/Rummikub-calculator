@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>拉密牌桌模擬器 (含復原防呆機制)</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0f2f5; color: #333; max-width: 900px; margin: 0 auto; padding: 20px; }
+        h1 { text-align: center; color: #2c3e50; margin-bottom: 10px; }
+        .container { background: white; padding: 25px; border-radius: 12px; box-shadow: 0 5px 15px rgba(0,0,0,0.1); }
+        .input-group { margin-bottom: 25px; border-bottom: 2px dashed #eee; padding-bottom: 15px; transition: opacity 0.3s; }
+        .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        label { font-size: 1.1em; font-weight: bold; color: #34495e; }
+        .tile-count { font-size: 0.9em; color: #7f8c8d; background: #ecf0f1; padding: 3px 10px; border-radius: 15px; }
+        .manual-input { width: 100%; padding: 12px; border: 2px solid #bdc3c7; border-radius: 8px; font-size: 16px; box-sizing: border-box; margin-bottom: 10px; text-transform: uppercase; }
+        .selected-zone { min-height: 55px; background: #f8f9fa; border: 2px solid #e9ecef; border-radius: 8px; padding: 10px; margin-bottom: 15px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+        .placeholder-text { color: #bdc3c7; font-style: italic; font-size: 0.9em; width: 100%; text-align: center; }
+        
+        .tile { aspect-ratio: 2 / 3; width: 40px; background: white; border: 2px solid #bdc3c7; border-radius: 6px; font-weight: bold; font-size: 16px; display: flex; align-items: center; justify-content: center; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+        .selected-zone .tile { cursor: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="red" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>') 10 10, pointer; transition: transform 0.1s; }
+        .selected-zone .tile:hover { transform: scale(0.9); opacity: 0.7; }
+        
+        .picker-grid { display: grid; gap: 5px; grid-template-columns: repeat(auto-fill, minmax(40px, 1fr)); }
+        .picker-btn { cursor: pointer; transition: all 0.2s ease; }
+        .picker-btn:hover { transform: translateY(-2px); box-shadow: 0 4px 8px rgba(0,0,0,0.1); }
+        
+        .color-R { color: #e74c3c; border-color: #e74c3c; } .color-B { color: #2c3e50; border-color: #2c3e50; }
+        .color-O { color: #e67e22; border-color: #e67e22; } .color-U { color: #3498db; border-color: #3498db; }
+        .color-J { color: #8e44ad; border-color: #8e44ad; }
+        .joker-tile { background: repeating-linear-gradient(45deg, #fff, #fff 5px, #fdf3ff 5px, #fdf3ff 10px); }
+        .joker-substituted { position: relative; }
+        .joker-substituted::after { content: '★'; position: absolute; top: -5px; right: -5px; font-size: 12px; color: #f1c40f; text-shadow: 0 0 2px #000; }
+
+        .options-group { background: #e8f4f8; padding: 15px; border-radius: 8px; margin-bottom: 20px; display: flex; flex-direction: column; gap: 12px; border: 1px solid #bce8f1; }
+        .checkbox-label { display: flex; align-items: center; font-weight: bold; color: #2980b9; cursor: pointer; font-size: 1.05em;}
+        .checkbox-label input { margin-right: 10px; width: 18px; height: 18px; cursor: pointer; }
+
+        /* 按鈕群組升級 */
+        .button-group { display: flex; gap: 10px; }
+        button { border: none; padding: 14px 10px; font-size: 16px; border-radius: 8px; cursor: pointer; color: white; font-weight: bold; transition: background 0.2s, opacity 0.2s; }
+        button.main-action { flex: 2; background-color: #27ae60; }
+        button.main-action:hover { background-color: #219150; }
+        
+        button.undo-btn { flex: 1; background-color: #f39c12; }
+        button.undo-btn:hover:not(:disabled) { background-color: #d68910; }
+        
+        button.danger-btn { flex: 1; background-color: #e74c3c; }
+        button.danger-btn:hover { background-color: #c0392b; }
+        
+        button.save-state-btn { width: 100%; background-color: #8e44ad; padding: 15px; margin-top: 15px; box-shadow: 0 4px 6px rgba(142,68,173,0.3); }
+        button.save-state-btn:hover { background-color: #732d91; }
+        
+        button:disabled { background-color: #bdc3c7 !important; cursor: not-allowed !important; opacity: 0.7; box-shadow: none !important; }
+
+        #result-area { margin-top: 30px; border-top: 2px solid #eee; padding-top: 20px; }
+        .solution-group { background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; border: 1px solid #eaeaea; }
+        .solution-group .tile { width: auto; padding: 0 12px; }
+        .warning-box { background: #fff3cd; border: 1px solid #ffe69c; padding: 15px; border-radius: 8px; margin-bottom: 15px; }
+        .warning-box p { color: #856404; font-weight: bold; margin-top: 0; margin-bottom: 10px; }
+        .warning-box .tile { width: auto; padding: 0 10px; height: 35px; font-size: 14px; opacity: 0.8; }
+        
+        .loading { text-align: center; font-weight: bold; color: #e67e22; display: none; margin: 20px 0; font-size: 1.1em; }
+        .status-perfect { color: #27ae60; } .status-partial { color: #f39c12; } .status-fail { color: #e74c3c; }
+    </style>
+</head>
+<body>
+
+    <h1>拉密牌桌模擬器</h1>
+    
+    <div class="container">
+        <div class="input-group" id="board-section">
+            <div class="section-header">
+                <label>1. 場上的牌 (不可收回)</label>
+                <span id="board-count" class="tile-count">已選: 0 張</span>
+            </div>
+            <input type="text" id="board-text" class="manual-input" placeholder="可直接輸入 (例: R7 B13 J)，或點選下方按鈕" onchange="syncFromText('board')">
+            <div id="board-selected" class="selected-zone"><div class="placeholder-text">目前為空。</div></div>
+            <div id="board-picker" class="picker-grid"></div> 
+        </div>
+
+        <div class="input-group">
+            <div class="section-header">
+                <label>2. 準備出的手牌</label>
+                <span id="hand-count" class="tile-count">已選: 0 張</span>
+            </div>
+            <input type="text" id="hand-text" class="manual-input" placeholder="可直接輸入 (例: J O5)，或點選下方按鈕" onchange="syncFromText('hand')">
+            <div id="hand-selected" class="selected-zone"><div class="placeholder-text">目前為空。</div></div>
+            <div id="hand-picker" class="picker-grid"></div>
+        </div>
+
+        <div class="options-group">
+            <label class="checkbox-label" title="勾選後將忽略場上的牌，且計算出的解總分必須大於等於30分">
+                <input type="checkbox" id="ice-break-mode" onchange="toggleIceBreak()"> ❄️ 這是「破冰」回合 (僅限手牌，且出牌總和 ≥ 30)
+            </label>
+            <label class="checkbox-label" title="若有兩種解法能出一樣多張牌，會優先選擇沒用到 Joker 的排法">
+                <input type="checkbox" id="save-joker-mode"> 🃏 優先保留百搭牌 (非必要不使用 Joker)
+            </label>
+        </div>
+
+        <div class="button-group">
+            <button id="calc-btn" class="main-action" onclick="startCalculation()">▶ 計算最佳策略</button>
+            <button id="undo-btn" class="undo-btn" onclick="undo()" disabled>↩️ 復原</button>
+            <button class="danger-btn" onclick="clearAll()">🗑️ 清空全部</button>
+        </div>
+        
+        <div id="loading" class="loading">⏳ 正在搜尋最佳組合方案，請稍候...<br><span style="font-size:0.8em; color:#7f8c8d;">(可能需要 1~3 秒)</span></div>
+        <div id="result-area"></div>
+    </div>
+
+    <script>
+        let boardTiles = [];
+        let handTiles = [];
+        const COLORS = ['R', 'B', 'O', 'U']; 
+        
+        // --- 新增：狀態歷史紀錄陣列 ---
+        let stateHistory = [];
+        
+        // 全域變數
+        let bestSolution = null;
+        let minRemaining = Infinity;
+        let bestJokersKept = -1; 
+        let bestRemainingTiles = [];
+        let searchStartTime = 0;
+        const TIME_LIMIT_MS = 3000; 
+
+        let isIceBreak = false;
+        let saveJoker = false;
+
+        const ALL_POSSIBLE_SETS = [];
+
+        function precomputeValidSets() {
+            for (let num = 1; num <= 13; num++) {
+                const tiles = COLORS.map(c => c + num);
+                ALL_POSSIBLE_SETS.push([tiles[0], tiles[1], tiles[2]]);
+                ALL_POSSIBLE_SETS.push([tiles[0], tiles[1], tiles[3]]);
+                ALL_POSSIBLE_SETS.push([tiles[0], tiles[2], tiles[3]]);
+                ALL_POSSIBLE_SETS.push([tiles[1], tiles[2], tiles[3]]);
+                ALL_POSSIBLE_SETS.push([...tiles]);
+            }
+            COLORS.forEach(color => {
+                for (let start = 1; start <= 11; start++) {
+                    for (let len = 3; len <= 14 - start; len++) {
+                        const run = [];
+                        for (let i = 0; i < len; i++) {
+                            run.push(color + (start + i));
+                        }
+                        ALL_POSSIBLE_SETS.push(run);
+                    }
+                }
+            });
+            ALL_POSSIBLE_SETS.sort((a, b) => b.length - a.length);
+        }
+
+        function calculateSetScore(solution) {
+            let sum = 0;
+            solution.forEach(group => {
+                group.forEach(tile => {
+                    let realTile = tile.startsWith('J-') ? tile.substring(2) : tile;
+                    sum += parseInt(realTile.substring(1));
+                });
+            });
+            return sum;
+        }
+
+        function getPossibleExtractions(pool, startIndex) {
+            const results = [];
+            const counts = {};
+            for (let t of pool) counts[t] = (counts[t] || 0) + 1;
+            const availableJokers = counts['J'] || 0;
+
+            for (let i = startIndex; i < ALL_POSSIBLE_SETS.length; i++) {
+                let target = ALL_POSSIBLE_SETS[i];
+                let tempCounts = { ...counts };
+                let jokersNeeded = 0;
+                let instantiatedSet = [];
+                
+                for (let tile of target) {
+                    if (tempCounts[tile] > 0) {
+                        tempCounts[tile]--;
+                        instantiatedSet.push(tile);
+                    } else {
+                        jokersNeeded++;
+                        instantiatedSet.push('J-' + tile); 
+                    }
+                }
+
+                if (jokersNeeded <= availableJokers) {
+                    tempCounts['J'] -= jokersNeeded;
+                    let newPool = [];
+                    for (let key in tempCounts) {
+                        for (let k = 0; k < tempCounts[key]; k++) {
+                            newPool.push(key);
+                        }
+                    }
+                    results.push({ newPool, instantiatedSet, setIndex: i });
+                }
+            }
+            return results;
+        }
+
+        function isSubset(remainingPool, originalHand) {
+            let tempHand = [...originalHand];
+            for (let item of remainingPool) {
+                let idx = tempHand.indexOf(item);
+                if (idx === -1) return false; 
+                tempHand.splice(idx, 1);
+            }
+            return true;
+        }
+
+        function solveOptimalDFS(pool, currentSolution, originalHand, startIndex = 0) {
+            if (performance.now() - searchStartTime > TIME_LIMIT_MS) return false;
+
+            if (isSubset(pool, originalHand)) {
+                let validLeaf = true;
+                if (isIceBreak) {
+                    let score = calculateSetScore(currentSolution);
+                    if (score < 30) validLeaf = false; 
+                }
+
+                if (validLeaf) {
+                    let currentRemaining = pool.length;
+                    let currentJokersKept = pool.filter(t => t === 'J').length;
+                    let isBetter = false;
+
+                    if (currentRemaining < minRemaining) {
+                        isBetter = true;
+                    } else if (currentRemaining === minRemaining && saveJoker) {
+                        if (currentJokersKept > bestJokersKept) {
+                            isBetter = true;
+                        }
+                    }
+
+                    if (isBetter) {
+                        minRemaining = currentRemaining;
+                        bestJokersKept = currentJokersKept;
+                        bestSolution = [...currentSolution]; 
+                        bestRemainingTiles = [...pool];
+                    }
+                    if (currentRemaining === 0) return true; 
+                }
+            }
+
+            const extractions = getPossibleExtractions(pool, startIndex);
+            for (let ext of extractions) {
+                if (solveOptimalDFS(ext.newPool, [...currentSolution, ext.instantiatedSet], originalHand, ext.setIndex)) {
+                    if(!saveJoker) return true; 
+                }
+            }
+            return false;
+        }
+
+        // --- 新增：快照紀錄與復原機制 ---
+        function saveSnapshot() {
+            // 深拷貝當前的狀態並推入陣列
+            stateHistory.push({
+                board: [...boardTiles],
+                hand: [...handTiles],
+                isIceBreak: isIceBreak
+            });
+            // 限制最多記憶 10 步，避免吃記憶體
+            if (stateHistory.length > 10) stateHistory.shift(); 
+            updateUndoButton();
+        }
+
+        function undo() {
+            if (stateHistory.length === 0) return;
+            
+            // 彈出上一個狀態
+            const prevState = stateHistory.pop();
+            boardTiles = prevState.board;
+            handTiles = prevState.hand;
+            
+            // 復原破冰開關
+            document.getElementById('ice-break-mode').checked = prevState.isIceBreak;
+            toggleIceBreak();
+            
+            // 重新渲染畫面
+            renderSelectedZones();
+            updateUndoButton();
+            
+            // 清除運算結果（因為狀態已經改變）
+            document.getElementById('result-area').innerHTML = "";
+        }
+
+        function updateUndoButton() {
+            const undoBtn = document.getElementById('undo-btn');
+            // 如果歷史陣列是空的，就禁用復原按鈕
+            undoBtn.disabled = stateHistory.length === 0;
+            // 提示文字
+            undoBtn.innerText = stateHistory.length > 0 ? `↩️ 復原 (${stateHistory.length})` : `↩️ 復原`;
+        }
+
+
+        window.onload = function() {
+            precomputeValidSets();
+            generateTilePickers('board-picker', 'board');
+            generateTilePickers('hand-picker', 'hand');
+            updateUndoButton();
+        };
+
+        function toggleIceBreak() {
+            isIceBreak = document.getElementById('ice-break-mode').checked;
+            const boardSection = document.getElementById('board-section');
+            if (isIceBreak) {
+                boardSection.style.opacity = '0.3';
+                boardSection.style.pointerEvents = 'none'; 
+            } else {
+                boardSection.style.opacity = '1';
+                boardSection.style.pointerEvents = 'auto';
+            }
+        }
+
+        function generateTilePickers(containerId, type) {
+            const container = document.getElementById(containerId);
+            COLORS.forEach(color => {
+                for (let num = 1; num <= 13; num++) {
+                    const btn = document.createElement('div');
+                    btn.className = `tile picker-btn color-${color}`;
+                    btn.innerText = num;
+                    btn.onclick = () => addTile(type, `${color}${num}`);
+                    container.appendChild(btn);
+                }
+            });
+            const jokerBtn = document.createElement('div');
+            jokerBtn.className = `tile picker-btn color-J joker-tile`;
+            jokerBtn.innerText = '😊'; 
+            jokerBtn.onclick = () => addTile(type, 'J');
+            container.appendChild(jokerBtn);
+        }
+
+        function addTile(type, tileKey) {
+            const limit = tileKey === 'J' ? 2 : 2;
+            const totalCount = boardTiles.filter(t => t === tileKey).length + handTiles.filter(t => t === tileKey).length;
+            if (totalCount >= limit) { alert(`無法加入！【${tileKey === 'J' ? '百搭牌' : tileKey}】最多 2 張。`); return; }
+            if (type === 'board') boardTiles.push(tileKey); else handTiles.push(tileKey);
+            renderSelectedZones();
+        }
+
+        function removeTile(type, index) {
+            if (type === 'board') boardTiles.splice(index, 1); else handTiles.splice(index, 1);
+            renderSelectedZones();
+        }
+
+        function syncFromText(type) {
+            const inputElement = document.getElementById(`${type}-text`);
+            const rawTokens = inputElement.value.trim().toUpperCase().split(/\s+/);
+            const validTiles = [];
+            const tempCounts = {};
+            const otherPool = (type === 'board') ? handTiles : boardTiles;
+            otherPool.forEach(t => { tempCounts[t] = (tempCounts[t] || 0) + 1; });
+
+            if(inputElement.value.trim() !== "") {
+                for (let token of rawTokens) {
+                    if (!/^([RBOU]([1-9]|1[0-3])|J)$/.test(token)) continue; 
+                    tempCounts[token] = (tempCounts[token] || 0) + 1;
+                    if (tempCounts[token] > 2) continue;
+                    validTiles.push(token);
+                }
+            }
+            if (type === 'board') boardTiles = validTiles; else handTiles = validTiles;
+            renderSelectedZones();
+        }
+
+        function renderTileElement(tileKey, isClickable = false, clickAction = null) {
+            const el = document.createElement('div');
+            if (tileKey === 'J') {
+                el.className = `tile color-J joker-tile`; el.innerText = '😊';
+            } else {
+                el.className = `tile color-${tileKey[0]}`; el.innerText = tileKey.substring(1);
+            }
+            if (isClickable) { el.title = "點擊移除"; el.onclick = clickAction; }
+            return el;
+        }
+
+        function renderSelectedZones() {
+            document.getElementById('board-text').value = boardTiles.join(' ');
+            document.getElementById('hand-text').value = handTiles.join(' ');
+
+            const boardZone = document.getElementById('board-selected');
+            document.getElementById('board-count').innerText = `已選: ${boardTiles.length} 張`;
+            boardZone.innerHTML = boardTiles.length === 0 ? '<div class="placeholder-text">目前為空。</div>' : '';
+            boardTiles.forEach((t, i) => boardZone.appendChild(renderTileElement(t, true, () => removeTile('board', i))));
+
+            const handZone = document.getElementById('hand-selected');
+            document.getElementById('hand-count').innerText = `已選: ${handTiles.length} 張`;
+            handZone.innerHTML = handTiles.length === 0 ? '<div class="placeholder-text">目前為空。</div>' : '';
+            handTiles.forEach((t, i) => handZone.appendChild(renderTileElement(t, true, () => removeTile('hand', i))));
+        }
+
+        function startCalculation() {
+            const resultArea = document.getElementById('result-area');
+            const loading = document.getElementById('loading');
+            const btn = document.getElementById('calc-btn');
+
+            isIceBreak = document.getElementById('ice-break-mode').checked;
+            saveJoker = document.getElementById('save-joker-mode').checked;
+
+            if (handTiles.length === 0) {
+                alert("請至少在手牌區加入一些牌！"); return;
+            }
+
+            bestSolution = null;
+            minRemaining = Infinity;
+            bestJokersKept = -1;
+            bestRemainingTiles = [];
+            searchStartTime = performance.now();
+            
+            const totalPool = isIceBreak ? [...handTiles] : [...boardTiles, ...handTiles];
+
+            btn.disabled = true;
+            loading.style.display = 'block';
+            resultArea.innerHTML = '';
+
+            setTimeout(() => {
+                solveOptimalDFS(totalPool, [], handTiles);
+                const timeCost = (performance.now() - searchStartTime).toFixed(0);
+                
+                loading.style.display = 'none';
+                btn.disabled = false;
+
+                renderResult(bestSolution, minRemaining, bestRemainingTiles, timeCost);
+            }, 50); 
+        }
+
+        function renderResult(solution, remainingCount, remainingTiles, timeCost) {
+            const resultArea = document.getElementById('result-area');
+            
+            if (!solution) {
+                let failMsg = isIceBreak ? "無法破冰，手牌的有效組合未達 30 分。" : "連「場上的牌」都無法合法維持。";
+                resultArea.innerHTML = `<h3 class="status-fail">❌ 無法完成操作</h3>
+                                        <p>${failMsg}（耗時：${timeCost} ms）</p>`;
+                return;
+            }
+
+            solution.sort((groupA, groupB) => {
+                const getReal = t => t.startsWith('J-') ? t.substring(2) : t;
+                const numA = parseInt(getReal(groupA[0]).substring(1));
+                const numB = parseInt(getReal(groupB[0]).substring(1));
+                if (numA !== numB) return numA - numB; 
+                return groupA.length - groupB.length; 
+            });
+
+            let remainingHtml = "";
+            if (remainingTiles && remainingTiles.length > 0) {
+                remainingTiles.sort((a, b) => {
+                    if (a === 'J') return 1; if (b === 'J') return -1;
+                    const numA = parseInt(a.substring(1)); const numB = parseInt(b.substring(1));
+                    if (numA !== numB) return numA - numB; return a[0].localeCompare(b[0]);
+                });
+                remainingHtml = `<div style="display:flex; flex-wrap:wrap; gap:5px;">`;
+                remainingTiles.forEach(t => remainingHtml += renderTileElement(t).outerHTML);
+                remainingHtml += `</div>`;
+            }
+
+            let titleHtml = "";
+            let remainingInfo = "";
+            let scoreStr = isIceBreak ? ` (破冰總分: ${calculateSetScore(solution)} 分)` : "";
+
+            if (remainingCount === 0) {
+                titleHtml = `<h3 class="status-perfect">🌟 完美解！手牌可全出！${scoreStr}</h3>`;
+            } else if (remainingCount < handTiles.length) {
+                const playedCount = handTiles.length - remainingCount;
+                titleHtml = `<h3 class="status-partial">✅ 最佳策略解！(出 ${playedCount} 張)${scoreStr}</h3>`;
+                remainingInfo = `<div class="warning-box"><p>⚠️ 以下手牌 (${remainingCount} 張) 請保留在手上：</p>${remainingHtml}</div>`;
+            } else {
+                titleHtml = `<h3 class="status-fail">🛑 無法出牌</h3>`;
+                remainingInfo = `<div class="warning-box" style="background: #f8d7da; border-color: #f5c6cb;"><p style="color: #721c24;">您的手牌目前一張都無法加入：</p>${remainingHtml}</div>`;
+            }
+
+            let html = `${titleHtml}<p style="color: #7f8c8d; margin-top:-10px; font-size:0.9em;">（耗時：${timeCost} ms）</p>${remainingInfo}`;
+            
+            html += `<h4 style="color:#34495e; margin-bottom: 10px;">👇 請依此方式重新排列場上牌桌 👇</h4>`;
+            solution.forEach((group, index) => {
+                html += `<div class="solution-group"><strong>牌組 ${index + 1}：</strong>`;
+                group.forEach(tileKey => {
+                    if (tileKey.startsWith('J-')) {
+                        const realKey = tileKey.substring(2);
+                        html += `<span class="tile color-${realKey[0]} joker-tile joker-substituted" title="百搭牌">${realKey.substring(1)}</span>`;
+                    } else {
+                        html += `<span class="tile color-${tileKey[0]}">${tileKey.substring(1)}</span>`;
+                    }
+                });
+                html += `</div>`;
+            });
+
+            // 記憶狀態按鈕
+            html += `<button class="save-state-btn" onclick="saveStateToNextRound()">💾 一鍵將此牌桌帶入下一回合</button>`;
+
+            resultArea.innerHTML = html;
+            resultArea.scrollIntoView({ behavior: 'smooth' });
+        }
+
+        // 修改：執行帶入下一回合前，先儲存快照！
+        function saveStateToNextRound() {
+            if (!bestSolution) return;
+            
+            // 拍下快照！這樣就能隨時復原
+            saveSnapshot();
+            
+            let newBoard = [];
+            bestSolution.forEach(group => {
+                group.forEach(tile => {
+                    if (tile.startsWith('J-')) {
+                        newBoard.push('J');
+                    } else {
+                        newBoard.push(tile);
+                    }
+                });
+            });
+            
+            boardTiles = newBoard;
+            handTiles = []; 
+            
+            document.getElementById('ice-break-mode').checked = false;
+            toggleIceBreak();
+
+            renderSelectedZones();
+            
+            const resultArea = document.getElementById('result-area');
+            resultArea.innerHTML = `<div class="warning-box" style="background: #d4edda; border-color: #c3e6cb; color: #155724; text-align:center; font-size: 1.1em;">
+                                        ✨ 牌桌已更新！請在「手牌區」輸入您下一回合抽到的新牌。<br>
+                                        <span style="font-size:0.8em; opacity:0.8;">(若不小心按錯，可點擊上方的「↩️ 復原」按鈕)</span>
+                                    </div>`;
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // 修改：執行清空前，先儲存快照！
+        function clearAll() {
+            if (boardTiles.length === 0 && handTiles.length === 0) return; // 如果本來就空了就不存
+            
+            // 拍下快照！
+            saveSnapshot();
+
+            boardTiles = []; handTiles = [];
+            renderSelectedZones();
+            document.getElementById('result-area').innerHTML = "";
+        }
+    </script>
+</body>
+</html>
